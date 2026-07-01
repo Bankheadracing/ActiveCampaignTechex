@@ -1,4 +1,5 @@
 environment          = "dev"
+aws_account_id       = "034362051932"
 aws_region           = "us-east-1"
 aws_assume_role_arn  = "arn:aws:iam::111111111111:role/jenkins-terraform-dev"
 okta_org_name        = "integrator-6065233"
