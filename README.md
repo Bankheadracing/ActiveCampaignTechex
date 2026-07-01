@@ -3,8 +3,7 @@
 # Okta + AWS EC2 CI/CD Pipeline (Jenkins + Terraform)
 
 This repo provisions and manages an Okta tenant (apps, groups, policies, users) and AWS EC2
-infrastructure through a single Jenkins pipeline backed by Terraform. There is no
-CloudFormation anywhere in this design — AWS resources are managed with the Terraform AWS
+infrastructure through a single Jenkins pipeline backed by Terraform. The AWS resources are managed with the Terraform AWS
 provider, side by side with the Terraform Okta provider, in the same plan/apply lifecycle.
 
 ## Layout
