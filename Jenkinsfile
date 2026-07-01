@@ -38,7 +38,7 @@ pipeline {
 
     stage('Load Credentials') {
       steps {
-        // AWS creds come from an assumed role (no static keys); Okta token from Jenkins secret store.
+        // AWS creds come from an assumed role; Okta token from Jenkins Global secret store.
         withCredentials([
           string(credentialsId: "okta-api-token-${params.ENVIRONMENT}", variable: 'TF_VAR_okta_api_token'),
           string(credentialsId: "aws-assume-role-arn-${params.ENVIRONMENT}", variable: 'TF_VAR_aws_assume_role_arn')
@@ -143,7 +143,7 @@ pipeline {
   post {
     success {
       echo "Pipeline succeeded for ${params.ENVIRONMENT}."
-      // slackSend / emailext notification hook goes here
+      // slackSend, Microsoft Teams, Zoomchat etc / emailext notification hook goes here
     }
     failure {
       echo "Pipeline failed for ${params.ENVIRONMENT} - check console output and tfplan artifact."
