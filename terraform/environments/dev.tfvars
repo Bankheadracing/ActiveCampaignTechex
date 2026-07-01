@@ -8,7 +8,7 @@ instance_type        = "t3.micro"
 instance_count       = 2
 ami_id               = "ami-0123456789abcdef0"
 vpc_id               = "vpc-0764d96120180b4ec"
-subnet_ids           = ["subnet-aaa111", "subnet-bbb222"]
+subnet_ids           = ["subnet-003be93b4f92f6640", "subnet-040e0f2c5a99bdf7b"]
 allowed_ssh_cidrs    = ["10.0.0.0/8"]
 okta_admin_group_users = [
   "rmart113@students.kennesaw.edu"
