@@ -4,6 +4,9 @@
  the AWS (EC2) and Okta provider resources, applied together so they
  never drift relative to each other (e.g. an EC2 fleet and the Okta
  SSO app/group that grants access to it).
+
+ Tools (terraform, tflint, checkov, jq, awscli) are pre-installed in
+ the custom Jenkins Docker image — no runtime installs needed.
 */
 
 pipeline {
@@ -19,15 +22,11 @@ pipeline {
     TF_IN_AUTOMATION   = 'true'
     TF_WORKSPACE_DIR   = 'terraform'
     AWS_DEFAULT_REGION = 'us-east-1'
-    // Pinned tool versions — bump these here to upgrade across all environments
-    TERRAFORM_VERSION  = '1.8.5'
-    TFLINT_VERSION     = 'v0.51.1'
-    CHECKOV_VERSION    = '3.2.0'
   }
 
   options {
     timestamps()
-    disableConcurrentBuilds() // one plan/apply at a time per state file
+    disableConcurrentBuilds()
     timeout(time: 45, unit: 'MINUTES')
   }
 
@@ -39,84 +38,24 @@ pipeline {
       }
     }
 
-    // ── NEW: install every CLI tool the pipeline needs if not already present ──
-    // This lets the pipeline run on a plain Jenkins agent (agent any) without
-    // any pre-baked Docker image or manual server setup.
-    stage('Install Tools') {
+    // Verify all tools are present and log their versions at the start of every
+    // build. Quick sanity check that the Docker image is what you expect.
+    stage('Tool Versions') {
       steps {
         sh '''
-          set -e
-
-          # ── Terraform ──────────────────────────────────────────────────────
-          if ! command -v terraform &>/dev/null; then
-            echo ">>> Installing Terraform ${TERRAFORM_VERSION}..."
-            apt-get update -qq && apt-get install -y -qq unzip curl
-            curl -fsSL \
-              "https://releases.hashicorp.com/terraform/${TERRAFORM_VERSION}/terraform_${TERRAFORM_VERSION}_linux_amd64.zip" \
-              -o /tmp/terraform.zip
-            unzip -q /tmp/terraform.zip -d /usr/local/bin/
-            chmod +x /usr/local/bin/terraform
-            rm /tmp/terraform.zip
-          else
-            echo ">>> Terraform already installed: $(terraform version -json | python3 -c 'import sys,json; print(json.load(sys.stdin)[\"terraform_version\"])')"
-          fi
-
-          # ── tflint ─────────────────────────────────────────────────────────
-          if ! command -v tflint &>/dev/null; then
-            echo ">>> Installing tflint ${TFLINT_VERSION}..."
-            curl -fsSL \
-              "https://github.com/terraform-linters/tflint/releases/download/${TFLINT_VERSION}/tflint_linux_amd64.zip" \
-              -o /tmp/tflint.zip
-            unzip -q /tmp/tflint.zip -d /usr/local/bin/
-            chmod +x /usr/local/bin/tflint
-            rm /tmp/tflint.zip
-          else
-            echo ">>> tflint already installed: $(tflint --version)"
-          fi
-
-          # ── checkov (via pip3) ─────────────────────────────────────────────
-          if ! command -v checkov &>/dev/null; then
-            echo ">>> Installing checkov ${CHECKOV_VERSION}..."
-            apt-get install -y -qq python3-pip
-            pip3 install --quiet "checkov==${CHECKOV_VERSION}"
-          else
-            echo ">>> checkov already installed: $(checkov --version)"
-          fi
-
-          # ── jq (used in Post-Apply Verification) ──────────────────────────
-          if ! command -v jq &>/dev/null; then
-            echo ">>> Installing jq..."
-            apt-get install -y -qq jq
-          else
-            echo ">>> jq already installed: $(jq --version)"
-          fi
-
-          # ── AWS CLI v2 (used in Post-Apply Verification) ──────────────────
-          if ! command -v aws &>/dev/null; then
-            echo ">>> Installing AWS CLI v2..."
-            apt-get install -y -qq curl unzip
-            curl -fsSL "https://awscli.amazonaws.com/awscli-exe-linux-x86_64.zip" -o /tmp/awscliv2.zip
-            unzip -q /tmp/awscliv2.zip -d /tmp/
-            /tmp/aws/install --update
-            rm -rf /tmp/awscliv2.zip /tmp/aws
-          else
-            echo ">>> AWS CLI already installed: $(aws --version)"
-          fi
-
-          echo ""
-          echo ">>> All tools verified:"
+          echo "=== Tool Versions ==="
           terraform version
           tflint  --version
           checkov --version
           jq      --version
           aws     --version
+          echo "====================="
         '''
       }
     }
 
     stage('Load Credentials') {
       steps {
-        // AWS creds come from an assumed role (no static keys); Okta token from Jenkins secret store.
         withCredentials([
           string(credentialsId: "okta-api-token-${params.ENVIRONMENT}", variable: 'TF_VAR_okta_api_token'),
           string(credentialsId: "aws-assume-role-arn-${params.ENVIRONMENT}", variable: 'TF_VAR_aws_assume_role_arn')
@@ -143,7 +82,7 @@ pipeline {
           sh 'terraform fmt -check -recursive'
           sh 'terraform validate'
           sh 'tflint --init && tflint'
-          sh 'checkov -d . --quiet --compact || true' // policy/security scan, non-blocking warning
+          sh 'checkov -d . --quiet --compact || true'
         }
       }
     }
@@ -221,7 +160,6 @@ pipeline {
   post {
     success {
       echo "Pipeline succeeded for ${params.ENVIRONMENT}."
-      // slackSend / emailext notification hook goes here
     }
     failure {
       echo "Pipeline failed for ${params.ENVIRONMENT} - check console output and tfplan artifact."
