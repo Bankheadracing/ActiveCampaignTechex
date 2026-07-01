@@ -7,9 +7,7 @@
 */
 
 pipeline {
-  agent {
-    label 'terraform-agent' // Jenkins agent/image with terraform, tflint, checkov, awscli preinstalled
-  }
+  agent any
 
   parameters {
     choice(name: 'ENVIRONMENT', choices: ['dev', 'stage', 'prod'], description: 'Target environment')
