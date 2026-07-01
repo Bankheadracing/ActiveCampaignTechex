@@ -10,7 +10,7 @@ provider, side by side with the Terraform Okta provider, in the same plan/apply 
 
 ```
 terraform/
-  backend.tf          # S3 + DynamoDB remote state
+  backend.tf          # S3 bucket
   providers.tf         # aws + okta provider blocks
   variables.tf          # shared input variables
   ec2.tf                # EC2 instances, SG, IAM instance profile
