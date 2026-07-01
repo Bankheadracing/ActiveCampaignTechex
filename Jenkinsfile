@@ -16,9 +16,13 @@ pipeline {
   }
 
   environment {
-    TF_IN_AUTOMATION = 'true'
-    TF_WORKSPACE_DIR = 'terraform'
+    TF_IN_AUTOMATION   = 'true'
+    TF_WORKSPACE_DIR   = 'terraform'
     AWS_DEFAULT_REGION = 'us-east-1'
+    // Pinned tool versions — bump these here to upgrade across all environments
+    TERRAFORM_VERSION  = '1.8.5'
+    TFLINT_VERSION     = 'v0.51.1'
+    CHECKOV_VERSION    = '3.2.0'
   }
 
   options {
@@ -32,6 +36,81 @@ pipeline {
     stage('Checkout') {
       steps {
         checkout scm
+      }
+    }
+
+    // ── NEW: install every CLI tool the pipeline needs if not already present ──
+    // This lets the pipeline run on a plain Jenkins agent (agent any) without
+    // any pre-baked Docker image or manual server setup.
+    stage('Install Tools') {
+      steps {
+        sh '''
+          set -e
+
+          # ── Terraform ──────────────────────────────────────────────────────
+          if ! command -v terraform &>/dev/null; then
+            echo ">>> Installing Terraform ${TERRAFORM_VERSION}..."
+            apt-get update -qq && apt-get install -y -qq unzip curl
+            curl -fsSL \
+              "https://releases.hashicorp.com/terraform/${TERRAFORM_VERSION}/terraform_${TERRAFORM_VERSION}_linux_amd64.zip" \
+              -o /tmp/terraform.zip
+            unzip -q /tmp/terraform.zip -d /usr/local/bin/
+            chmod +x /usr/local/bin/terraform
+            rm /tmp/terraform.zip
+          else
+            echo ">>> Terraform already installed: $(terraform version -json | python3 -c 'import sys,json; print(json.load(sys.stdin)[\"terraform_version\"])')"
+          fi
+
+          # ── tflint ─────────────────────────────────────────────────────────
+          if ! command -v tflint &>/dev/null; then
+            echo ">>> Installing tflint ${TFLINT_VERSION}..."
+            curl -fsSL \
+              "https://github.com/terraform-linters/tflint/releases/download/${TFLINT_VERSION}/tflint_linux_amd64.zip" \
+              -o /tmp/tflint.zip
+            unzip -q /tmp/tflint.zip -d /usr/local/bin/
+            chmod +x /usr/local/bin/tflint
+            rm /tmp/tflint.zip
+          else
+            echo ">>> tflint already installed: $(tflint --version)"
+          fi
+
+          # ── checkov (via pip3) ─────────────────────────────────────────────
+          if ! command -v checkov &>/dev/null; then
+            echo ">>> Installing checkov ${CHECKOV_VERSION}..."
+            apt-get install -y -qq python3-pip
+            pip3 install --quiet "checkov==${CHECKOV_VERSION}"
+          else
+            echo ">>> checkov already installed: $(checkov --version)"
+          fi
+
+          # ── jq (used in Post-Apply Verification) ──────────────────────────
+          if ! command -v jq &>/dev/null; then
+            echo ">>> Installing jq..."
+            apt-get install -y -qq jq
+          else
+            echo ">>> jq already installed: $(jq --version)"
+          fi
+
+          # ── AWS CLI v2 (used in Post-Apply Verification) ──────────────────
+          if ! command -v aws &>/dev/null; then
+            echo ">>> Installing AWS CLI v2..."
+            apt-get install -y -qq curl unzip
+            curl -fsSL "https://awscli.amazonaws.com/awscli-exe-linux-x86_64.zip" -o /tmp/awscliv2.zip
+            unzip -q /tmp/awscliv2.zip -d /tmp/
+            /tmp/aws/install --update
+            rm -rf /tmp/awscliv2.zip /tmp/aws
+          else
+            echo ">>> AWS CLI already installed: $(aws --version)"
+          fi
+
+          echo ""
+          echo ">>> All tools verified:"
+          terraform version
+          tflint  --version
+          checkov --version
+          jq      --version
+          aws     --version
+        '''
       }
     }
 
