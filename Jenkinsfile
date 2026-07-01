@@ -4,12 +4,10 @@
  the AWS (EC2) and Okta provider resources, applied together so they
  never drift relative to each other (e.g. an EC2 fleet and the Okta
  SSO app/group that grants access to it).
-
- Tools (terraform, tflint, checkov, jq, awscli) are pre-installed in
- the custom Jenkins Docker image — no runtime installs needed.
 */
 
 pipeline {
+  
   agent any
 
   parameters {
@@ -19,14 +17,14 @@ pipeline {
   }
 
   environment {
-    TF_IN_AUTOMATION   = 'true'
-    TF_WORKSPACE_DIR   = 'terraform'
+    TF_IN_AUTOMATION = 'true'
+    TF_WORKSPACE_DIR = 'terraform'
     AWS_DEFAULT_REGION = 'us-east-1'
   }
 
   options {
     timestamps()
-    disableConcurrentBuilds()
+    disableConcurrentBuilds() // one plan/apply at a time per state file
     timeout(time: 45, unit: 'MINUTES')
   }
 
@@ -38,24 +36,9 @@ pipeline {
       }
     }
 
-    // Verify all tools are present and log their versions at the start of every
-    // build. Quick sanity check that the Docker image is what you expect.
-    stage('Tool Versions') {
-      steps {
-        sh '''
-          echo "=== Tool Versions ==="
-          terraform version
-          tflint  --version
-          checkov --version
-          jq      --version
-          aws     --version
-          echo "====================="
-        '''
-      }
-    }
-
     stage('Load Credentials') {
       steps {
+        // AWS creds come from an assumed role (no static keys); Okta token from Jenkins secret store.
         withCredentials([
           string(credentialsId: "okta-api-token-${params.ENVIRONMENT}", variable: 'TF_VAR_okta_api_token'),
           string(credentialsId: "aws-assume-role-arn-${params.ENVIRONMENT}", variable: 'TF_VAR_aws_assume_role_arn')
@@ -82,7 +65,7 @@ pipeline {
           sh 'terraform fmt -check -recursive'
           sh 'terraform validate'
           sh 'tflint --init && tflint'
-          sh 'checkov -d . --quiet --compact || true'
+          sh 'checkov -d . --quiet --compact || true' // policy/security scan, non-blocking warning
         }
       }
     }
@@ -160,6 +143,7 @@ pipeline {
   post {
     success {
       echo "Pipeline succeeded for ${params.ENVIRONMENT}."
+      // slackSend / emailext notification hook goes here
     }
     failure {
       echo "Pipeline failed for ${params.ENVIRONMENT} - check console output and tfplan artifact."
